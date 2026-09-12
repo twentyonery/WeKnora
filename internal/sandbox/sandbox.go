@@ -5,6 +5,8 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -24,6 +26,11 @@ const (
 	SandboxTypeCube SandboxType = "cube"
 	// SandboxTypeE2B uses E2B's hosted MicroVM sandbox service.
 	SandboxTypeE2B SandboxType = "e2b"
+	// SandboxTypeLocal runs each session as host processes jailed to one
+	// workspace directory (see local_subprocess_client.go). It serves
+	// single-node deployments and development machines without a Docker
+	// daemon; isolation is a directory jail plus ulimit, not a container.
+	SandboxTypeLocal SandboxType = "local"
 	// SandboxTypeDisabled means script execution is disabled
 	SandboxTypeDisabled SandboxType = "disabled"
 )
@@ -33,7 +40,7 @@ const (
 // share the same workspace configuration surface.
 func IsNamedSandboxBackendType(raw string) bool {
 	switch SandboxType(raw) {
-	case SandboxTypeCube, SandboxTypeE2B, SandboxTypeDocker:
+	case SandboxTypeCube, SandboxTypeE2B, SandboxTypeDocker, SandboxTypeLocal:
 		return true
 	default:
 		return false
@@ -371,6 +378,24 @@ type Config struct {
 	// E2BHTTPTimeout bounds ordinary E2B HTTP calls, including response bodies.
 	// Command streams use their execution timeout instead.
 	E2BHTTPTimeout time.Duration
+
+	// LocalWorkspaceRoot is the host directory every local sandbox lives
+	// under, one sub-directory per sandbox. Required (absolute path) when
+	// Type == SandboxTypeLocal; the sandbox directory is presented to
+	// scripts as "/".
+	LocalWorkspaceRoot string
+
+	// LocalCPULimitSeconds caps CPU-seconds per exec via ulimit -t.
+	// Zero uses DefaultLocalCPULimitSeconds.
+	LocalCPULimitSeconds int
+
+	// LocalMemoryLimitMB caps virtual memory per exec via ulimit -v.
+	// Zero uses DefaultLocalMemoryLimitMB.
+	LocalMemoryLimitMB int
+
+	// LocalIdleTTL is how long a local sandbox directory may go unused
+	// before the idle sweep removes it. Zero uses DefaultLocalIdleTTL.
+	LocalIdleTTL time.Duration
 }
 
 // DefaultConfig returns a default sandbox configuration.
@@ -398,7 +423,7 @@ func ValidateConfig(config *Config) error {
 	}
 
 	switch config.Type {
-	case SandboxTypeDocker, SandboxTypeCube, SandboxTypeE2B, SandboxTypeDisabled:
+	case SandboxTypeDocker, SandboxTypeCube, SandboxTypeE2B, SandboxTypeLocal, SandboxTypeDisabled:
 		// Valid types
 	default:
 		return errors.New("invalid sandbox type")
@@ -406,6 +431,16 @@ func ValidateConfig(config *Config) error {
 
 	if config.DefaultTimeout < 0 {
 		return errors.New("timeout cannot be negative")
+	}
+
+	if config.Type == SandboxTypeLocal {
+		root := strings.TrimSpace(config.LocalWorkspaceRoot)
+		if root == "" {
+			return errors.New("local sandbox requires workspace_root")
+		}
+		if !filepath.IsAbs(root) {
+			return errors.New("local workspace_root must be an absolute path")
+		}
 	}
 
 	if config.MaxMemory < 0 {

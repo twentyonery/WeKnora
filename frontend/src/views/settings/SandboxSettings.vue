@@ -402,6 +402,9 @@ function targetSummary(record: SandboxConfigRecord): string {
   if (record.sandbox_type === 'docker') {
     return record.config?.docker?.image || ''
   }
+  if (record.sandbox_type === 'local') {
+    return record.config?.local?.workspace_root || ''
+  }
   return endpointHost(record)
 }
 
@@ -453,6 +456,12 @@ function buildCardWarnings(record: SandboxConfigRecord): CardWarning[] {
     warnings.push({
       key: 'image',
       text: t('settings.sandbox.imageNotConfigured'),
+    })
+  }
+  if (record.sandbox_type === 'local' && !config.local?.workspace_root?.trim()) {
+    warnings.push({
+      key: 'workspace-root',
+      text: t('settings.sandbox.workspaceRootNotConfigured'),
     })
   }
   return warnings

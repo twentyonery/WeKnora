@@ -85,6 +85,11 @@ type TenantSandboxResolverDeps struct {
 	Store   SessionSandboxBindingStore
 	Checker SessionExistenceChecker
 
+	// Limiter enforces each config's MaxConcurrentSandboxes quota. Optional;
+	// a process-wide limiter is created when nil. It must be shared by every
+	// manager this resolver builds — which it is, because the resolver owns it.
+	Limiter *TenantSandboxLimiter
+
 	// SharedTransport is reused by every tenant's HTTP client. Optional; a
 	// guarded transport is installed when nil.
 	SharedTransport *http.Transport
@@ -94,6 +99,7 @@ type tenantSandboxResolver struct {
 	deps             TenantSandboxResolverDeps
 	transport        *http.Transport
 	privateTransport *http.Transport
+	limiter          *TenantSandboxLimiter
 
 	// gatewayTransports must outlive the per-request clients it serves, which is
 	// the whole point of holding it here rather than building it per Resolve.
@@ -119,9 +125,14 @@ func NewTenantSandboxResolver(deps TenantSandboxResolverDeps) (TenantSandboxReso
 	if transport == nil {
 		transport = NewGuardedTransport()
 	}
+	limiter := deps.Limiter
+	if limiter == nil {
+		limiter = NewTenantSandboxLimiter()
+	}
 	return &tenantSandboxResolver{
 		deps:                     deps,
 		transport:                transport,
+		limiter:                  limiter,
 		privateTransport:         NewGuardedTransportWithPolicy(OutboundURLPolicy{AllowPrivate: true}),
 		gatewayTransports:        NewSandboxGatewayTransportPool(transport),
 		privateGatewayTransports: NewSandboxGatewayTransportPoolWithPolicy(nil, OutboundURLPolicy{AllowPrivate: true}),
@@ -178,22 +189,30 @@ func (r *tenantSandboxResolver) Resolve(
 	if err := EnsureDockerBackendAllowed(effective.Type); err != nil {
 		return nil, err
 	}
+	// Quota cap comes straight off the stored config (0 = unlimited); the
+	// effective runtime config is provider-scoped and does not carry it.
+	maxSandboxes := 0
+	if resolved.Config != nil {
+		maxSandboxes = resolved.Config.MaxConcurrentSandboxes
+	}
 
 	switch effective.Type {
 	case SandboxTypeDisabled:
 		return NewDisabledManager(), nil
-	case SandboxTypeCube, SandboxTypeE2B, SandboxTypeDocker:
+	case SandboxTypeCube, SandboxTypeE2B, SandboxTypeDocker, SandboxTypeLocal:
 		client, err := r.buildClient(effective)
 		if err != nil {
 			return nil, err
 		}
 		return NewSessionBoundManager(SessionBoundManagerConfig{
-			Config:          effective,
-			Client:          client,
-			Store:           r.deps.Store,
-			Checker:         r.deps.Checker,
-			SkipHealthProbe: true,
-			ConfigID:        configID,
+			Config:                 effective,
+			Client:                 client,
+			Store:                  r.deps.Store,
+			Checker:                r.deps.Checker,
+			SkipHealthProbe:        true,
+			ConfigID:               configID,
+			Limiter:                r.limiter,
+			MaxConcurrentSandboxes: maxSandboxes,
 		})
 	default:
 		return NewDisabledManager(), nil
@@ -223,6 +242,9 @@ func (r *tenantSandboxResolver) buildClient(cfg *Config) (RemoteSandboxClient, e
 		// reached over a unix socket as often as over TCP. It installs the
 		// same guarded dialer for TCP endpoints (see newDockerEngineClient).
 		return NewDockerRemoteClient(cfg)
+	case SandboxTypeLocal:
+		// No HTTP transport involved: the "control plane" is a directory.
+		return NewLocalSubprocessClient(cfg)
 	default:
 		return nil, fmt.Errorf("sandbox: provider %q has no remote client", cfg.Type)
 	}
@@ -255,6 +277,10 @@ func NewRemoteClientForCheck(cfg *Config) (RemoteSandboxClient, error) {
 			return nil, err
 		}
 		return NewDockerRemoteClientForCheck(cfg)
+	case SandboxTypeLocal:
+		// The deep check creates a sandbox and execs in it; a throwaway
+		// client against the configured root is exactly what that needs.
+		return NewLocalSubprocessClient(cfg)
 	default:
 		return nil, fmt.Errorf("sandbox: provider %q cannot be probed", cfg.Type)
 	}

@@ -771,6 +771,8 @@ export interface SandboxConfig {
   sandbox_type?: string
   default_timeout_sec?: number
   terminal_idle_disconnect_sec?: number
+  /** Max live sandboxes per workspace across sessions; 0/undefined = unlimited. */
+  max_concurrent_sandboxes?: number
   allow_private_endpoints?: boolean
   env_vars?: Record<string, string>
   volume_mount?: SandboxVolumeMountConfig
@@ -780,6 +782,15 @@ export interface SandboxConfig {
   cube?: SandboxCubeConfig
   e2b?: SandboxE2BConfig
   docker?: SandboxDockerConfig
+  local?: SandboxLocalConfig
+}
+
+/** Local backend: one host directory with one subprocess group per session. */
+export interface SandboxLocalConfig {
+  workspace_root?: string
+  cpu_limit_seconds?: number
+  memory_limit_mb?: number
+  idle_ttl_seconds?: number
 }
 
 /** Docker backend: one daemon, one long-lived container per session. */
@@ -914,7 +925,7 @@ export interface SandboxInventory {
 }
 
 /** Sandbox backends managed as named workspace configurations. */
-export const NAMED_SANDBOX_BACKEND_TYPES = ['cube', 'e2b', 'docker'] as const
+export const NAMED_SANDBOX_BACKEND_TYPES = ['cube', 'e2b', 'docker', 'local'] as const
 
 export function isNamedSandboxBackend(type: string): boolean {
   return (NAMED_SANDBOX_BACKEND_TYPES as readonly string[]).includes(type)

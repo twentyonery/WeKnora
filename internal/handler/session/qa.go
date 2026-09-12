@@ -1765,4 +1765,17 @@ func (h *Handler) recordAnswerSources(ctx context.Context, assistantMessage *typ
 		})
 	}
 	h.memoryService.RecordAnswerSources(ctx, refs)
+	h.recordLearningExposure(ctx, refs)
+}
+
+// recordLearningExposure feeds the cited documents into the learning
+// navigator, so wiki pages citing them light up on the person's knowledge
+// map. Best-effort telemetry: a failure here must never disturb the answer.
+func (h *Handler) recordLearningExposure(ctx context.Context, refs []types.MemoryDocAffinity) {
+	if h.learningService == nil {
+		return
+	}
+	if err := h.learningService.RecordAnswerExposure(ctx, refs); err != nil {
+		logger.Warnf(ctx, "learning: record answer exposure failed: %v", err)
+	}
 }

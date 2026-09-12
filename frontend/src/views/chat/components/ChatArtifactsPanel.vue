@@ -103,6 +103,8 @@
             <span class="artifact-body">
               <span class="artifact-name" :title="item.file_name">{{ item.file_name }}</span>
               <span class="artifact-meta">
+                <span v-if="kindLabel(item)" class="artifact-kind" :data-kind="kindLabel(item)?.kind">{{ kindLabel(item)?.label }}</span>
+                <span class="artifact-meta-sep">·</span>
                 <span>{{ formatArtifactSize(item.file_size) }}</span>
                 <span class="artifact-meta-sep">·</span>
                 <span>{{ formatArtifactDateTime(item.created_at) }}</span>
@@ -134,7 +136,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { downloadArtifact } from '@/api/chat'
-import { resolveFilePreviewExt } from '@/utils/filePreview'
+import { resolveFilePreviewExt, resolvePreviewKind, type FilePreviewKind } from '@/utils/filePreview'
 import {
   formatArtifactDateTime,
   formatArtifactSize,
@@ -178,6 +180,26 @@ const previewFileType = computed(() => {
   if (!item) return ''
   return resolveFilePreviewExt(item.file_name, item.file_type)
 })
+
+// 类型标记：把可页内预览的类别映射成徽标文案，让"这类产物能直接打开"
+// 在列表里可辨识。unsupported/纯文本不标，避免每行都挂一个无信息量的徽标。
+const KIND_I18N_KEY: Partial<Record<FilePreviewKind, string>> = {
+  pptx: 'chat.sandbox.artifactKindSlides',
+  html: 'chat.sandbox.artifactKindWeb',
+  excel: 'chat.sandbox.artifactKindSheet',
+  docx: 'chat.sandbox.artifactKindDoc',
+  pdf: 'chat.sandbox.artifactKindPdf',
+  image: 'chat.sandbox.artifactKindImage',
+  audio: 'chat.sandbox.artifactKindAudio',
+  video: 'chat.sandbox.artifactKindVideo',
+  mermaid: 'chat.sandbox.artifactKindDiagram',
+}
+
+function kindLabel(item: SessionArtifactItem): { kind: FilePreviewKind; label: string } | null {
+  const kind = resolvePreviewKind(resolveFilePreviewExt(item.file_name, item.file_type))
+  const key = KIND_I18N_KEY[kind]
+  return key ? { kind, label: t(key) } : null
+}
 
 function downloadKey(item: SessionArtifactItem): string {
   return `${item.messageId}:${item.index}`
@@ -520,6 +542,31 @@ async function handleDownload(item: SessionArtifactItem) {
 
 .artifact-meta-sep {
   opacity: 0.6;
+}
+
+.artifact-kind {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 500;
+
+  &[data-kind='pptx'] {
+    background: rgba(255, 102, 0, 0.12);
+    color: #d54941;
+  }
+
+  &[data-kind='excel'] {
+    background: rgba(0, 168, 112, 0.12);
+    color: #00a870;
+  }
+
+  &[data-kind='html'] {
+    background: rgba(255, 153, 0, 0.14);
+    color: #ed7b2f;
+  }
 }
 
 .artifact-download.t-button {

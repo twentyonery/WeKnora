@@ -210,7 +210,7 @@ test('docker payload omits hidden allow and deny lists', () => {
   )
   assert.match(
     payloadBlock,
-    /if \(backend\.value === 'docker'\) \{\s*return policy/,
+    /if \(backend\.value === 'docker'(?: \|\| backend\.value === 'local')?\) \{\s*return policy/,
     'Docker must not persist Cube/E2B radios or allow/deny rows',
   )
   assert.match(
@@ -227,7 +227,7 @@ test('docker hides egress radios that it cannot honour', () => {
   )
   assert.match(
     networkBlock,
-    /v-if="backend !== 'docker'"[\s\S]*settings\.sandbox\.egressDefault/,
+    /v-if="backend !== 'docker'(?: && backend !== 'local')?"[\s\S]*settings\.sandbox\.egressDefault/,
     'egress radios must not render for Docker',
   )
 })

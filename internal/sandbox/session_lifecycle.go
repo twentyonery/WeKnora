@@ -44,6 +44,26 @@ type remoteSessionLifecycle struct {
 	cleanupTimeout  time.Duration
 	sandboxConfigID string
 	now             func() time.Time
+
+	// limiter caps live sandboxes per (tenant, config); nil disables the
+	// quota. maxSandboxes is the cap passed to every Acquire.
+	limiter      *TenantSandboxLimiter
+	maxSandboxes int
+}
+
+// SessionLifecycleOption customises newRemoteSessionLifecycle without
+// growing its positional signature for every future knob.
+type SessionLifecycleOption func(*remoteSessionLifecycle)
+
+// WithTenantSandboxLimiter installs the process-wide quota so each new
+// sandbox consumes one per-(tenant, config) slot for its binding's lifetime.
+func WithTenantSandboxLimiter(limiter *TenantSandboxLimiter, maxSandboxes int) SessionLifecycleOption {
+	return func(l *remoteSessionLifecycle) {
+		if limiter != nil {
+			l.limiter = limiter
+			l.maxSandboxes = maxSandboxes
+		}
+	}
 }
 
 func newRemoteSessionLifecycle(
@@ -53,6 +73,7 @@ func newRemoteSessionLifecycle(
 	createRequest RemoteCreateRequest,
 	cleanupTimeout time.Duration,
 	sandboxConfigID string,
+	opts ...SessionLifecycleOption,
 ) (*remoteSessionLifecycle, error) {
 	if client == nil {
 		return nil, errors.New("remote sandbox client is required")
@@ -80,7 +101,7 @@ func newRemoteSessionLifecycle(
 	}
 	createRequest.Metadata = cloneMetadata(createRequest.Metadata)
 	createRequest.EnvVars = cloneMetadata(createRequest.EnvVars)
-	return &remoteSessionLifecycle{
+	lifecycle := &remoteSessionLifecycle{
 		client:          client,
 		bindings:        bindings,
 		sessionChecker:  sessionChecker,
@@ -88,7 +109,21 @@ func newRemoteSessionLifecycle(
 		cleanupTimeout:  cleanupTimeout,
 		sandboxConfigID: sandboxConfigID,
 		now:             time.Now,
-	}, nil
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(lifecycle)
+		}
+	}
+	return lifecycle, nil
+}
+
+// releaseSlot returns one quota slot for the tenant behind key. Safe to call
+// when no limiter is installed.
+func (l *remoteSessionLifecycle) releaseSlot(key SessionSandboxKey) {
+	if l.limiter != nil {
+		l.limiter.Release(key.TenantID, l.sandboxConfigID)
+	}
 }
 
 // Resolve returns the current provider's sandbox for key, creating or
@@ -437,6 +472,24 @@ func (l *remoteSessionLifecycle) createAndBind(
 	ctx context.Context,
 	key SessionSandboxKey,
 ) (RemoteSandboxHandle, error) {
+	// Quota gate: one slot per (tenant, config) for the sandbox this call
+	// creates. slotHeld stays true on every path that does not end with the
+	// created sandbox remaining bound — including the lost-race branches
+	// where our create is cleaned up in favour of the winning binding — so
+	// the deferred release refunds exactly the failed attempts.
+	slotHeld := false
+	if l.limiter != nil {
+		if err := l.limiter.Acquire(key.TenantID, l.sandboxConfigID, l.maxSandboxes); err != nil {
+			return nil, err
+		}
+		slotHeld = true
+		defer func() {
+			if slotHeld {
+				l.releaseSlot(key)
+			}
+		}()
+	}
+
 	request := l.createRequest
 	request.Metadata = nil
 	if l.client.Capabilities().SupportsMetadata {
@@ -497,6 +550,9 @@ func (l *remoteSessionLifecycle) createAndBind(
 		)
 	}
 	if created {
+		// The created sandbox stays bound: it keeps its quota slot until
+		// destroyBindingLocked refunds it.
+		slotHeld = false
 		return handle, nil
 	}
 
@@ -509,6 +565,7 @@ func (l *remoteSessionLifecycle) createAndBind(
 	if winner != nil &&
 		winner.Provider == l.client.Provider() &&
 		winner.SandboxID == handle.ID() {
+		slotHeld = false
 		return handle, nil
 	}
 	if cleanupErr := l.cleanupCreated(ctx, handle); cleanupErr != nil {
@@ -609,6 +666,10 @@ func (l *remoteSessionLifecycle) destroyBindingLocked(
 		return fmt.Errorf("delete sandbox binding: %w", err)
 	}
 	if deleted {
+		// The binding left the authoritative store, so its quota slot goes
+		// back. Releases for sandboxes adopted without a slot (recovered
+		// after a restart) clamp at zero inside the limiter.
+		l.releaseSlot(key)
 		return nil
 	}
 	current, err := l.readBinding(ctx, key)

@@ -53,6 +53,8 @@ func MissingRequiredFields(cfg *Config) []string {
 		require("template_id", cfg.E2BTemplate)
 	case SandboxTypeDocker:
 		require("image", cfg.DockerImage)
+	case SandboxTypeLocal:
+		require("workspace_root", cfg.LocalWorkspaceRoot)
 	}
 	return missing
 }

@@ -624,7 +624,7 @@ func (c *StorageEngineConfig) Scan(value interface{}) error {
 // It is self-contained: provider fields are not inherited from process
 // environment. Leaving a required provider field empty is rejected on save.
 type TenantSandboxConfig struct {
-	// SandboxType is cube, e2b, or docker; disabled is the hidden policy row.
+	// SandboxType is cube, e2b, docker, or local; disabled is the hidden policy row.
 	SandboxType string `json:"sandbox_type,omitempty"`
 
 	// ── 通用配置（跨后端生效）──────────────────────────────────
@@ -638,6 +638,14 @@ type TenantSandboxConfig struct {
 	// so the sandbox can pause on its provider TTL. 0 uses the built-in
 	// default (15 minutes). Not an identity field.
 	TerminalIdleDisconnectSec int `json:"terminal_idle_disconnect_sec,omitempty"`
+
+	// MaxConcurrentSandboxes caps how many live sandboxes this config may
+	// keep per workspace across sessions — new creations fail fast with a
+	// limit error once the cap is reached, instead of silently multiplying
+	// provider cost. 0 means unlimited. Enforcement is per WeKnora process
+	// (in-process counting): multi-replica deployments should size the cap
+	// accordingly or run one replica per workspace.
+	MaxConcurrentSandboxes int `json:"max_concurrent_sandboxes,omitempty"`
 
 	// AllowPrivateEndpoints permits this workspace config to reach RFC1918 or
 	// loopback cluster endpoints. Link-local/cloud-metadata addresses remain
@@ -681,6 +689,30 @@ type TenantSandboxConfig struct {
 	Cube   *CubeSandboxConfig   `json:"cube,omitempty"`
 	E2B    *E2BSandboxConfig    `json:"e2b,omitempty"`
 	Docker *DockerSandboxConfig `json:"docker,omitempty"`
+	Local  *LocalSandboxConfig  `json:"local,omitempty"`
+}
+
+// LocalSandboxConfig configures the local subprocess backend: one workspace
+// directory plus host processes per sandbox, jailed to that directory.
+// WorkspaceRoot is required and must be an absolute path — it is where every
+// session's files live, so an operator has to see and approve it explicitly
+// rather than inherit a deployment default.
+type LocalSandboxConfig struct {
+	// WorkspaceRoot is the host directory holding one sub-directory per
+	// sandbox. Required.
+	WorkspaceRoot string `json:"workspace_root,omitempty"`
+
+	// CPULimitSeconds caps CPU-seconds per command via ulimit -t.
+	// 0 uses the built-in default.
+	CPULimitSeconds int `json:"cpu_limit_seconds,omitempty"`
+
+	// MemoryLimitMB caps virtual memory per command via ulimit -v.
+	// 0 uses the built-in default.
+	MemoryLimitMB int `json:"memory_limit_mb,omitempty"`
+
+	// IdleTTLSeconds is how long a sandbox may go unused before the idle
+	// sweep reclaims its directory. 0 uses the built-in default.
+	IdleTTLSeconds int `json:"idle_ttl_seconds,omitempty"`
 }
 
 // CubeSandboxConfig addresses one CubeSandbox deployment. APIURL, ProxyURL,

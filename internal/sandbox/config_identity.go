@@ -80,6 +80,13 @@ func IdentityOf(tenantCfg *types.TenantSandboxConfig) SandboxIdentity {
 			identity.APIURL = docker.Host
 			identity.APIKey = docker.TLSCertPath
 		}
+	case SandboxTypeLocal:
+		// The workspace root is both planes at once, like the Docker socket:
+		// sandbox directories are created, exec'd and removed under it, so
+		// re-pointing it strands every sandbox this config owns.
+		if local := tenantCfg.Local; local != nil {
+			identity.APIURL = local.WorkspaceRoot
+		}
 	}
 	return identity
 }

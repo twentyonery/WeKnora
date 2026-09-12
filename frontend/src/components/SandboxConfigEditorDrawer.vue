@@ -212,7 +212,7 @@
         </div>
       </section>
 
-      <section v-if="currentStepKey === 'connection' && !isRemoteBackend" class="setting-drawer__section">
+      <section v-if="currentStepKey === 'connection' && backend === 'docker'" class="setting-drawer__section">
         <h4 class="setting-drawer__section-title">{{ $t('settings.sandbox.sectionRuntimeEnvironment') }}</h4>
         <div class="weknora-template-card is-active">
           <SandboxBackendBadge type="docker" />
@@ -255,6 +255,26 @@
             @change="invalidateConnection"
           />
         </div>
+      </section>
+
+      <section v-if="currentStepKey === 'connection' && backend === 'local'" class="setting-drawer__section">
+        <h4 class="setting-drawer__section-title">{{ $t('settings.sandbox.sectionRuntimeEnvironment') }}</h4>
+        <div class="weknora-template-card is-active">
+          <SandboxBackendBadge type="local" />
+          <div class="weknora-template-card__content">
+            <div class="weknora-template-card__title-row">
+              <span class="weknora-template-card__title">{{ $t('settings.sandbox.localWorkspaceRoot') }}</span>
+            </div>
+            <p>{{ $t('settings.sandbox.localWorkspaceRootHint') }}</p>
+          </div>
+        </div>
+        <t-form-item :label="requiredLabel('localWorkspaceRoot')" :status="fieldStatus('workspace_root')"
+          :tips="fieldTip('workspace_root')">
+          <t-input v-model="local.workspace_root" placeholder="/data/weknora-local-sandboxes"
+            :disabled="retargetFrozen" @input="onFieldInput('workspace_root')" />
+          <p class="section-help section-help--field">{{ $t('settings.sandbox.localWorkspaceRootHelp') }}</p>
+        </t-form-item>
+        <t-alert theme="warning" class="compact-alert" :message="$t('settings.sandbox.localIsolationRisk')" />
       </section>
 
       <section v-if="currentStepKey === 'template'" class="setting-drawer__section">
@@ -417,6 +437,28 @@
                   placeholder="512" />
               </t-form-item>
             </template>
+            <!--
+              The local backend has no provider-side timeout either: its idle
+              TTL drives the directory sweeper, and the CPU/memory caps are
+              injected as ulimits into every subprocess the sandbox spawns.
+            -->
+            <template v-if="backend === 'local'">
+              <t-form-item :label="$t('settings.sandbox.localIdleTtl')"
+                :tips="$t('settings.sandbox.localIdleTtlHelp')">
+                <t-input-number v-model="local.idle_ttl_seconds" :min="0" theme="column"
+                  placeholder="1800" />
+              </t-form-item>
+              <t-form-item :label="$t('settings.sandbox.localCpuLimit')"
+                :tips="$t('settings.sandbox.localCpuLimitHelp')">
+                <t-input-number v-model="local.cpu_limit_seconds" :min="0" theme="column"
+                  placeholder="60" />
+              </t-form-item>
+              <t-form-item :label="$t('settings.sandbox.localMemoryLimit')"
+                :tips="$t('settings.sandbox.localMemoryLimitHelp')">
+                <t-input-number v-model="local.memory_limit_mb" :min="0" theme="column"
+                  placeholder="512" />
+              </t-form-item>
+            </template>
             <t-form-item :label="$t('settings.sandbox.defaultTimeout')"
               :tips="$t('settings.sandbox.defaultTimeoutHelp')">
               <t-input-number v-model="defaultTimeoutSec" :min="0" theme="column" placeholder="60" />
@@ -425,6 +467,11 @@
               :tips="$t('settings.sandbox.terminalIdleDisconnectHelp')">
               <t-input-number v-model="terminalIdleDisconnectSec" :min="0" :max="86400"
                 theme="column" placeholder="900" />
+            </t-form-item>
+            <t-form-item :label="$t('settings.sandbox.maxConcurrentSandboxes')"
+              :tips="$t('settings.sandbox.maxConcurrentSandboxesHelp')">
+              <t-input-number v-model="maxConcurrentSandboxes" :min="0" :max="1000"
+                theme="column" placeholder="0" />
             </t-form-item>
           </div>
         </div>
@@ -436,7 +483,7 @@
           {{ $t('settings.sandbox.networkHint') }}
         </p>
 
-        <template v-if="backend !== 'docker'">
+        <template v-if="backend !== 'docker' && backend !== 'local'">
           <t-form-item :label="$t('settings.sandbox.egressDefault')"
             :tips="$t('settings.sandbox.egressPrecedence')">
             <t-radio-group v-model="denyEgressByDefault">
@@ -457,7 +504,10 @@
           </t-form-item>
         </template>
 
-        <template v-else>
+        <t-alert v-if="backend === 'local'" theme="warning" class="compact-alert"
+          :message="$t('settings.sandbox.localNetworkHint')" />
+
+        <template v-else-if="backend !== 'local'">
           <div class="net-list">
             <div class="section-title-row">
               <span class="net-list__title">{{ $t('settings.sandbox.allowOut') }}</span>
@@ -759,6 +809,7 @@ import {
   type SandboxCubeConfig,
   type SandboxE2BConfig,
   type SandboxDockerConfig,
+  type SandboxLocalConfig,
   type SandboxNetworkPolicy,
   type SandboxTemplate,
   isNamedSandboxBackend,
@@ -821,10 +872,13 @@ const backend = ref('')
 // matching the HTTP timeout / TTL fields. A literal 0 would read as a real value.
 const defaultTimeoutSec = ref<number | undefined>(undefined)
 const terminalIdleDisconnectSec = ref<number | undefined>(undefined)
+// undefined = unlimited (0 on the wire); the quota is opt-in per config.
+const maxConcurrentSandboxes = ref<number | undefined>(undefined)
 const allowPrivateEndpoints = ref(false)
 const cube = reactive<SandboxCubeConfig>({})
 const e2b = reactive<SandboxE2BConfig>({})
 const docker = reactive<SandboxDockerConfig>({})
+const local = reactive<SandboxLocalConfig>({})
 // Tracks which secrets the tenant already has stored, so an empty input can
 // mean "keep the saved key" instead of "no key configured".
 const storedSecrets = reactive({ cube: false, e2b: false })
@@ -1065,6 +1119,7 @@ const REQUIRED_FIELDS: Record<string, string[]> = {
   cube: ['api_url', 'proxy_url', 'sandbox_domain', 'template_id'],
   e2b: ['api_key', 'template_id'],
   docker: ['image'],
+  local: ['workspace_root'],
 }
 
 const fieldErrors = ref<Record<string, string>>({})
@@ -1091,6 +1146,7 @@ function onConnectionInput(field: string) {
 function submittedBackendValues(): Record<string, unknown> {
   if (backend.value === 'cube') return withStoredSecret({ ...cube }, storedSecrets.cube)
   if (backend.value === 'e2b') return withStoredSecret({ ...e2b }, storedSecrets.e2b)
+  if (backend.value === 'local') return { ...local }
   return { ...docker }
 }
 
@@ -1126,15 +1182,18 @@ function reset() {
     : defaultBackendType()
   defaultTimeoutSec.value = cfg.default_timeout_sec || undefined
   terminalIdleDisconnectSec.value = cfg.terminal_idle_disconnect_sec || undefined
+  maxConcurrentSandboxes.value = cfg.max_concurrent_sandboxes || undefined
   allowPrivateEndpoints.value = cfg.allow_private_endpoints === true
   // Replace rather than merge: a reused reactive object would otherwise carry
   // the previously edited config's fields into the next one opened.
   Object.keys(cube).forEach((key) => delete (cube as Record<string, unknown>)[key])
   Object.keys(e2b).forEach((key) => delete (e2b as Record<string, unknown>)[key])
   Object.keys(docker).forEach((key) => delete (docker as Record<string, unknown>)[key])
+  Object.keys(local).forEach((key) => delete (local as Record<string, unknown>)[key])
   Object.assign(cube, cfg.cube || {})
   Object.assign(e2b, cfg.e2b || {})
   Object.assign(docker, cfg.docker || {})
+  Object.assign(local, cfg.local || {})
   if (!Array.isArray(cube.dns_servers)) cube.dns_servers = []
   if (backend.value === 'docker' && !docker.image) {
     docker.image = defaultDockerImage
@@ -1465,6 +1524,7 @@ function collectPayload(): SandboxConfig {
     sandbox_type: backend.value,
     default_timeout_sec: defaultTimeoutSec.value || undefined,
     terminal_idle_disconnect_sec: terminalIdleDisconnectSec.value || undefined,
+    max_concurrent_sandboxes: maxConcurrentSandboxes.value || undefined,
     allow_private_endpoints: allowPrivateEndpoints.value || undefined,
     env_vars: envVars,
     skill_rollout: skillRollout.value,
@@ -1475,6 +1535,7 @@ function collectPayload(): SandboxConfig {
   if (backend.value === 'cube') payload.cube = withStoredSecret({ ...cube }, storedSecrets.cube)
   if (backend.value === 'e2b') payload.e2b = withStoredSecret({ ...e2b }, storedSecrets.e2b)
   if (backend.value === 'docker') payload.docker = { ...docker }
+  if (backend.value === 'local') payload.local = { ...local }
   return payload
 }
 
@@ -1483,7 +1544,7 @@ function collectPayload(): SandboxConfig {
 function collectNetworkPolicy(): SandboxNetworkPolicy {
   const policy: SandboxNetworkPolicy = {}
   // Docker can only honour network_mode on the docker block.
-  if (backend.value === 'docker') {
+  if (backend.value === 'docker' || backend.value === 'local') {
     return policy
   }
   if (denyEgressByDefault.value) policy.deny_egress_by_default = true

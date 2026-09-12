@@ -110,7 +110,7 @@ func TestIsNamedSandboxBackendType(t *testing.T) {
 		{"cube", true},
 		{"e2b", true},
 		{"docker", true},
-		{"local", false},
+		{"local", true},
 		{"disabled", false},
 		{"", false},
 	} {

@@ -126,6 +126,17 @@ func ResolveEffectiveConfig(
 		overrideSeconds(&effective.DockerHTTPTimeout, docker.HTTPTimeoutSec)
 	}
 
+	if local := tenantCfg.Local; local != nil {
+		overrideString(&effective.LocalWorkspaceRoot, local.WorkspaceRoot)
+		if local.CPULimitSeconds > 0 {
+			effective.LocalCPULimitSeconds = local.CPULimitSeconds
+		}
+		if local.MemoryLimitMB > 0 {
+			effective.LocalMemoryLimitMB = local.MemoryLimitMB
+		}
+		overrideSeconds(&effective.LocalIdleTTL, local.IdleTTLSeconds)
+	}
+
 	switch effective.Type {
 	case SandboxTypeCube:
 		applyCubeRuntimeDefaults(&effective)
@@ -222,6 +233,11 @@ func clearProviderFields(cfg *Config) {
 	cfg.E2BTemplate = ""
 	cfg.E2BSandboxTTL = 0
 	cfg.E2BHTTPTimeout = 0
+
+	cfg.LocalWorkspaceRoot = ""
+	cfg.LocalCPULimitSeconds = 0
+	cfg.LocalMemoryLimitMB = 0
+	cfg.LocalIdleTTL = 0
 	cfg.Network = RemoteNetworkPolicy{}
 }
 
@@ -241,6 +257,8 @@ func ParseSandboxType(raw string) (SandboxType, error) {
 		return SandboxTypeE2B, nil
 	case SandboxTypeDocker:
 		return SandboxTypeDocker, nil
+	case SandboxTypeLocal:
+		return SandboxTypeLocal, nil
 	case SandboxTypeDisabled:
 		return SandboxTypeDisabled, nil
 	default:
@@ -262,6 +280,10 @@ func EffectiveTemplateID(cfg *Config) string {
 		// The image is what a template ID is for the MicroVM backends: the
 		// pre-baked filesystem a sandbox starts from.
 		return cfg.DockerImage
+	case SandboxTypeLocal:
+		// A directory seeded at creation plays the template's role; there
+		// is no provider-side artifact to name.
+		return "local"
 	default:
 		return ""
 	}

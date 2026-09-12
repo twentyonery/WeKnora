@@ -1501,14 +1501,16 @@ func TestCreateAcceptsDockerNamedSandboxBackend(t *testing.T) {
 	require.Equal(t, "docker", docker.SandboxType)
 }
 
-func TestCreateRejectsRemovedLocalBackend(t *testing.T) {
+// local is a first-class named backend now; like Docker it is refused on save
+// only when its required workspace_root is missing, not for being "removed".
+func TestCreateRejectsLocalWithoutRoot(t *testing.T) {
 	svc := newTestConfigService(t, &fakeConfigRepo{}, nil, stubAgentRepo{})
 
 	_, err := svc.Create(context.Background(), 7, CreateSandboxConfigInput{
 		Name:   "local-dev",
 		Config: &types.TenantSandboxConfig{SandboxType: "local"},
 	})
-	require.ErrorIs(t, err, ErrNamedSandboxBackendUnsupported)
+	require.ErrorIs(t, err, sandbox.ErrSandboxConfigIncomplete)
 }
 
 func TestCreateRejectsDockerWithoutImage(t *testing.T) {

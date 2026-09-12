@@ -109,6 +109,15 @@ type SessionBoundManagerConfig struct {
 	// Set by the per-tenant resolver, which builds a manager per request.
 	// See NewSessionBoundManager.
 	SkipHealthProbe bool
+
+	// Limiter installs the process-wide live-sandbox quota for this config.
+	// Optional; nil keeps the previous unlimited behaviour. The cap comes
+	// from MaxConcurrentSandboxes on the tenant's sandbox config.
+	Limiter *TenantSandboxLimiter
+
+	// MaxConcurrentSandboxes is the per-(tenant, config) live-sandbox cap
+	// applied when Limiter is set. 0 means unlimited.
+	MaxConcurrentSandboxes int
 }
 
 // NewSessionBoundManager wires the manager with an explicit RemoteSandboxClient
@@ -153,6 +162,9 @@ func NewSessionBoundManager(deps SessionBoundManagerConfig) (*SessionBoundManage
 		applyE2BRuntimeDefaults(cfg)
 	case SandboxTypeDocker:
 		applyDockerRuntimeDefaults(cfg)
+	case SandboxTypeLocal:
+		// The local client already normalises its own limits and idle TTL in
+		// NewLocalSubprocessClient; nothing to default here.
 	}
 
 	// Build the provider-specific neutral create request using the
@@ -180,6 +192,7 @@ func NewSessionBoundManager(deps SessionBoundManagerConfig) (*SessionBoundManage
 		createRequest,
 		sessionLifecycleCleanupTimeout,
 		deps.ConfigID,
+		WithTenantSandboxLimiter(deps.Limiter, deps.MaxConcurrentSandboxes),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("session bound manager: %w", err)
@@ -1254,6 +1267,26 @@ func buildSessionCreateRequest(provider RemoteProvider, cfg *Config) (RemoteCrea
 				// host, so pausing an abandoned sandbox would reclaim nothing.
 				// Idle containers are deleted; the lifecycle rebinds the
 				// session exactly as it does for a provider-reaped sandbox.
+				Action:     RemoteOnTimeoutKill,
+				AutoResume: false,
+			},
+		}, nil
+
+	case SandboxTypeLocal:
+		// The local backend has no template: the "template" is the sandbox
+		// directory the client seeds on Create. The TTL doubles as the idle
+		// sweep deadline; like Docker, an idle directory is deleted rather
+		// than paused (there is nothing resident to pause).
+		ttl := cfg.LocalIdleTTL
+		if ttl <= 0 {
+			ttl = DefaultLocalIdleTTL
+		}
+		return RemoteCreateRequest{
+			TemplateID: EffectiveTemplateID(cfg),
+			EnvVars:    envVars,
+			Timeout: RemoteTimeoutPolicy{
+				Mode:       RemoteTimeoutExplicit,
+				Value:      ttl,
 				Action:     RemoteOnTimeoutKill,
 				AutoResume: false,
 			},

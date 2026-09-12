@@ -9,6 +9,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // SessionTerminal bundles an opened PTY with the backend that serves it, so
@@ -34,22 +36,26 @@ type SandboxTerminalService struct {
 	resolver sandbox.TenantSandboxResolver
 	fallback sandbox.Manager
 	policy   WorkspaceSandboxPolicy
+	audit    interfaces.AuditLogService
 }
 
 // NewSandboxTerminalService wires the terminal service. All dependencies
 // are optional individually; with no pinner the service reports "no live
-// sandbox" for every session.
+// sandbox" for every session, and with no audit service terminal activity
+// simply skips the audit trail.
 func NewSandboxTerminalService(
 	pinner *SessionSandboxPinner,
 	resolver sandbox.TenantSandboxResolver,
 	fallback sandbox.Manager,
 	policy WorkspaceSandboxPolicy,
+	audit interfaces.AuditLogService,
 ) *SandboxTerminalService {
 	return &SandboxTerminalService{
 		pinner:   pinner,
 		resolver: resolver,
 		fallback: fallback,
 		policy:   policy,
+		audit:    audit,
 	}
 }
 
@@ -152,11 +158,14 @@ func (s *SandboxTerminalService) EnsureSessionTerminal(
 		// nothing left to connect to.
 		if errors.Is(terr, sandbox.ErrNoLiveSessionSandbox) {
 			if perr := s.provisionOnManager(ctx, mgr, sessionID); perr == nil {
+				s.emitSandboxAudit(ctx, types.AuditActionSandboxProvisioned, sessionID, nil)
 				if terminal, retryErr := s.openOnManager(ctx, mgr, sessionID, opts); retryErr == nil {
 					return terminal, nil
 				} else {
 					terr = retryErr
 				}
+			} else {
+				s.emitSandboxLimitAudit(ctx, sessionID, perr)
 			}
 		}
 		return nil, terr
@@ -170,6 +179,7 @@ func (s *SandboxTerminalService) EnsureSessionTerminal(
 		ctx, s.resolver, s.fallback, s.pinner, tenantID, sessionID, strings.TrimSpace(sandboxConfigID), s.policy,
 	)
 	if err != nil {
+		s.emitSandboxLimitAudit(ctx, sessionID, err)
 		return nil, err
 	}
 	if mgr == nil || mgr.GetType() == sandbox.SandboxTypeDisabled {
@@ -180,10 +190,25 @@ func (s *SandboxTerminalService) EnsureSessionTerminal(
 	// provisions the sandbox AND pins it, exactly like the first agent turn
 	// would.
 	if err := s.provisionOnManager(ctx, mgr, sessionID); err != nil {
+		s.emitSandboxLimitAudit(ctx, sessionID, err)
 		return nil, err
 	}
+	s.emitSandboxAudit(ctx, types.AuditActionSandboxProvisioned, sessionID, nil)
 
 	return s.openOnManager(ctx, mgr, sessionID, opts)
+}
+
+// emitSandboxLimitAudit records a quota rejection so operators can tell
+// "user hit the workspace cap" apart from a provider outage. Non-limit
+// errors are ignored — they already have their own logs.
+func (s *SandboxTerminalService) emitSandboxLimitAudit(
+	ctx context.Context,
+	sessionID string,
+	err error,
+) {
+	if errors.Is(err, sandbox.ErrTenantSandboxLimitExceeded) {
+		s.emitSandboxAudit(ctx, types.AuditActionSandboxLimitDenied, sessionID, nil)
+	}
 }
 
 // provisionOnManager drives the manager's lazy session-sandbox creation with
@@ -226,6 +251,9 @@ func (s *SandboxTerminalService) openOnManager(
 	if err != nil {
 		return nil, err
 	}
+	s.emitSandboxAudit(ctx, types.AuditActionSandboxTerminalOpened, sessionID, map[string]any{
+		"backend": string(mgr.GetType()),
+	})
 	return &SessionTerminal{
 		Session:        session,
 		Backend:        string(mgr.GetType()),
@@ -260,3 +288,39 @@ func terminalManagerFromManager(mgr sandbox.Manager) (sandbox.SessionTerminalMan
 // serve interactive terminals. Same sentinel as sandbox.ErrTerminalUnsupported
 // so errors.Is matches either name.
 var ErrTerminalUnsupported = sandbox.ErrTerminalUnsupported
+
+// emitSandboxAudit writes one sandbox activity row to the audit trail.
+// Terminal and file-panel activity is exactly the kind of infrastructure
+// touch the audit log exists for: it creates real sandboxes, runs real
+// shells, and reshapes the workspace, so the who/when belongs in the trail.
+// Emission is strictly best-effort — audit failures must never break a
+// terminal session or a file operation, and entries without a tenant in
+// context are dropped (matching the audit sink adapter's rule against
+// tenant_id=0 rows).
+func (s *SandboxTerminalService) emitSandboxAudit(
+	ctx context.Context,
+	action types.AuditAction,
+	sessionID string,
+	detail map[string]any,
+) {
+	if s.audit == nil {
+		return
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return
+	}
+	b, err := json.Marshal(detail)
+	if err != nil {
+		b = []byte("{}")
+	}
+	if err := s.audit.Log(ctx, &types.AuditLog{
+		TenantID:   tenantID,
+		Action:     action,
+		TargetType: "session",
+		TargetID:   sessionID,
+		Details:    types.JSON(b),
+	}); err != nil {
+		logger.GetLogger(ctx).Warnf("[audit] %s emit failed: %v", action, err)
+	}
+}

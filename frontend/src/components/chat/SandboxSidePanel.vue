@@ -58,6 +58,14 @@
           :active="panel?.activeTab.value === 'artifacts'"
         />
 
+        <!-- 工作区文件管理器：浏览/上传/下载/重命名/删除，惰性激活后保留状态。 -->
+        <ChatFilesPanel
+          v-show="panel?.activeTab.value === 'files'"
+          class="chat-sandbox-panel__files"
+          :session-id="sessionId"
+          :active="panel?.activeTab.value === 'files'"
+        />
+
         <!-- 终端：首次激活时惰性挂载；切 tab 用 v-show 保留实例（不丢 PTY）。 -->
         <SandboxTerminal
           v-if="terminalMounted"
@@ -93,6 +101,7 @@ import {
 } from '@/composables/useChatSandboxPanel'
 import SandboxTerminal from '@/views/chat/components/SandboxTerminal.vue'
 import ChatArtifactsPanel from '@/views/chat/components/ChatArtifactsPanel.vue'
+import ChatFilesPanel from '@/views/chat/components/ChatFilesPanel.vue'
 import type { SessionArtifactItem } from '@/utils/sessionArtifacts'
 
 const props = withDefaults(
@@ -118,6 +127,7 @@ const panel = useChatSandboxPanel()
 
 const tabs = computed(() => [
   { id: 'artifacts' as SandboxPanelTab, icon: 'folder', label: t('chat.sandbox.tabArtifacts') },
+  { id: 'files' as SandboxPanelTab, icon: 'browse-gallery', label: t('chat.sandbox.tabFiles') },
   { id: 'terminal' as SandboxPanelTab, icon: 'terminal', label: t('chat.sandbox.tabTerminal') },
   { id: 'desktop' as SandboxPanelTab, icon: 'desktop', label: t('chat.sandbox.tabDesktop') },
 ])

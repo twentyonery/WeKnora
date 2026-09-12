@@ -1,0 +1,41 @@
+# 腾讯犀牛鸟开源人才培养计划 2026 — 实战提交清单（WeKnora）
+#
+# 本文件描述两个课题的提交范围、标签与验收入口。
+# 每个标签均指向包含全部两题工作的同一棵源码树，保证任一标签可独立构建。
+
+program: 腾讯犀牛鸟开源人才培养计划 2026（开源实战）
+project: WeKnora（腾讯开源知识库 RAG 项目）
+repository: https://github.com/Tencent/WeKnora
+submitter:
+  name: "<姓名>"
+  github_id: "<GitHub ID>"
+  email: "<联系邮箱>"
+
+topics:
+  - topic: 课题二
+    title: 可视化沙箱工作台（多后端统一接口 · 交互终端 · 文件管理器 · 产物预览 · Skill · 限额 · 审计）
+    tag: rhino-2026-final-二
+    deliverables:
+      - "本地子进程沙箱后端（local backend）：与 Cube / E2B / Docker 共同实现统一 RemoteSandboxClient 接口，目录级 jail、ulimit 资源限制、沙箱内 /workspace 与 /tmp 路径透明翻译（修复 macOS 与无 chroot 环境的越狱写入），PTY 终端支持（Linux openpty / 其他平台降级）"
+      - "会话文件浏览 REST API：/sessions/:id/sandbox/files 列目录/下载/上传/建目录/重命名/删除，路径安全规则（lexical jail、/workspace/input 只读）由 sandbox 包统一执行"
+      - "前端文件管理器：侧栏“工作区”标签页，面包屑导航、上传、下载、重命名、删除、新建目录，404/409 状态差异化提示"
+      - "产物类型标记与页内预览：产物列表按 PPT/网页/表格/文档/PDF/图片/音视频/图表打类型徽标；PPT（vue-office）、表格（XLSX→净化 HTML）、网页（sandbox=allow-scripts 隔离 iframe）支持页内直接预览"
+      - "演示文稿生成 Skill：examples/skills/presentation-gen（SKILL.md + scripts/make_pptx.py，基于 python-pptx，产物写入 /workspace/output 即入产物面板）"
+      - "跨会话沙箱限额：TenantSandboxConfig.max_concurrent_sandboxes（每工作区×配置的并发沙箱上限，进程内精确计数，多副本按副本数折算），创建超限快速失败，销毁自动回补"
+      - "沙箱审计事件：sandbox.terminal_opened / sandbox.provisioned / sandbox.limit_denied / sandbox.file_uploaded / sandbox.file_deleted / sandbox.file_renamed / sandbox.dir_created 接入既有 audit_logs 体系；设置抽屉新增并发上限输入"
+    verification:
+      - "go test ./internal/sandbox/ ./internal/application/service/"
+      - "前端：cd frontend && npm test && npx vue-tsc --build"
+      - "界面入口：会话右侧沙箱面板 → 产物 / 工作区 / 终端 / 桌面 标签页"
+
+  - topic: 课题四
+    title: 知识网络与引导式学习（Learning Navigator）
+    tag: rhino-2026-final-四
+    deliverables:
+      - "以 Wiki 页面为知识节点，关联用户长期记忆（memory_items / memory_topic_stats / memory_doc_affinity）构建个人知识网络覆盖层"
+      - "掌握度模型：仅用可观测行为信号（检索命中/对话引用/主题相关/页面访问），14 天半衰期时间衰减，归一化到 [0,1]"
+      - "学习导航：点亮知识网络可视化 + 下一步学习引导闭环（internal/handler/learning.go、frontend/src/views/learning/）"
+      - "设计与评估：docs/DESIGN.md（问题定义/粒度选型/公式/接口），evaluation/replay_eval.py 回放评估"
+    verification:
+      - "migrations/versioned/000094_learning_navigator.*.sql 为对应迁移"
+      - "python evaluation/replay_eval.py 可复现掌握度评估"

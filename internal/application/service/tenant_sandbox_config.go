@@ -1400,7 +1400,7 @@ func (s *TenantSandboxConfigService) clientFor(
 		return nil, err
 	}
 	switch effective.Type {
-	case sandbox.SandboxTypeCube, sandbox.SandboxTypeE2B, sandbox.SandboxTypeDocker:
+	case sandbox.SandboxTypeCube, sandbox.SandboxTypeE2B, sandbox.SandboxTypeDocker, sandbox.SandboxTypeLocal:
 		return s.newClient(effective)
 	default:
 		return nil, nil

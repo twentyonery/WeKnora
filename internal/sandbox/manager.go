@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -47,7 +48,7 @@ func (m *DefaultManager) initializeSandbox(ctx context.Context) error {
 		m.sandbox = &disabledSandbox{}
 		return nil
 
-	case SandboxTypeCube, SandboxTypeE2B, SandboxTypeDocker:
+	case SandboxTypeCube, SandboxTypeE2B, SandboxTypeDocker, SandboxTypeLocal:
 		// Session-scoped remote backends are only reachable through
 		// SessionBoundManager, which owns the authoritative binding.
 		// DefaultManager exposes stateless semantics that cannot preserve
@@ -233,6 +234,8 @@ func NewManagerFromType(sandboxType string, dockerImage string) (Manager, error)
 		sType = SandboxTypeCube
 	case "e2b":
 		sType = SandboxTypeE2B
+	case "local":
+		sType = SandboxTypeLocal
 	case "disabled", "":
 		sType = SandboxTypeDisabled
 	default:
@@ -260,6 +263,17 @@ func NewManagerFromType(sandboxType string, dockerImage string) (Manager, error)
 		applyDockerRuntimeDefaults(config)
 		if client, err = NewDockerRemoteClient(config); err != nil {
 			return nil, fmt.Errorf("sandbox: build Docker client: %w", err)
+		}
+	case SandboxTypeLocal:
+		// This entry point has no tenant config to read an operator-approved
+		// root from, so fall back to a temp-scoped root rather than refusing:
+		// NewManagerFromType is the programmatic/dev path. Tenant configs
+		// always carry their explicit workspace_root (required on save).
+		if config.LocalWorkspaceRoot == "" {
+			config.LocalWorkspaceRoot = filepath.Join(os.TempDir(), "weknora-local-sandboxes")
+		}
+		if client, err = NewLocalSubprocessClient(config); err != nil {
+			return nil, fmt.Errorf("sandbox: build local client: %w", err)
 		}
 	}
 	if client == nil {

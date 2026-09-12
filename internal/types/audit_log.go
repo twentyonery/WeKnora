@@ -186,6 +186,18 @@ const (
 	AuditActionFAQImportStarted   AuditAction = "faq.import_started"
 	AuditActionFAQImportCompleted AuditAction = "faq.import_completed"
 	AuditActionFAQImportFailed    AuditAction = "faq.import_failed"
+
+	// Sandbox activity actions for the visual workspace: interactive
+	// terminal attachment, provisioning driven by a confirmed user action,
+	// quota rejections, and file-manager mutations inside /workspace.
+	// TargetType is "session" and TargetID the owning session ID.
+	AuditActionSandboxTerminalOpened AuditAction = "sandbox.terminal_opened"
+	AuditActionSandboxProvisioned    AuditAction = "sandbox.provisioned"
+	AuditActionSandboxLimitDenied    AuditAction = "sandbox.limit_denied"
+	AuditActionSandboxFileUploaded   AuditAction = "sandbox.file_uploaded"
+	AuditActionSandboxFileDeleted    AuditAction = "sandbox.file_deleted"
+	AuditActionSandboxFileRenamed    AuditAction = "sandbox.file_renamed"
+	AuditActionSandboxDirCreated     AuditAction = "sandbox.dir_created"
 )
 
 // AuditOutcome separates asynchronous acceptance from terminal business

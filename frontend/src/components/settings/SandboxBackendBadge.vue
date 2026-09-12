@@ -21,6 +21,7 @@ const logo = computed(() => providerLogo('sandbox', props.type))
 const iconName = computed(() => {
   if (props.type === 'cube') return 'server'
   if (props.type === 'disabled') return 'minus-circle'
+  if (props.type === 'local') return 'laptop'
   return 'cloud'
 })
 
@@ -74,6 +75,11 @@ const badgeStyle = computed((): Record<string, string> => (
 .sandbox-badge--docker {
   background: rgba(29, 99, 237, 0.1);
   color: #1d63ed;
+}
+
+.sandbox-badge--local {
+  background: rgba(0, 122, 77, 0.1);
+  color: #007a4d;
 }
 
 .sandbox-badge--mono::before {

@@ -180,6 +180,12 @@ const router = createRouter({
           component: () => import("../views/organization/OrganizationList.vue"),
           meta: { requiresInit: true, requiresAuth: true, requiredCapability: 'organizations' }
         },
+        {
+          path: "learning",
+          name: "learningNavigator",
+          component: () => import("../views/learning/LearningNavigator.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
         // Compatibility redirects for /platform/system/* URLs. System
         // administration surfaces live as dedicated sections inside the
         // standard Settings modal; keep stable URLs for bookmarks and

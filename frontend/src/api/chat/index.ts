@@ -1,4 +1,4 @@
-import { get, post, put, del, postChat, getDown } from "../../utils/request";
+import { get, post, put, del, postChat, getDown, postUpload } from "../../utils/request";
 
 
 
@@ -133,5 +133,71 @@ export async function downloadArtifact(
 ): Promise<Blob> {
   return getDown(
     `/api/v1/sessions/${session_id}/messages/${message_id}/artifacts/${index}/download`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Session sandbox file browser — CRUD over the workspace bound to a session.
+// Paths are sandbox-absolute ("/workspace/..."); the server jails every path
+// lexically, so the client never has to sanitise. Downloads use the same
+// blob pattern as artifacts because the endpoint needs the Bearer token.
+// ---------------------------------------------------------------------------
+
+export interface SandboxFileEntry {
+  name: string;
+  /** Sandbox-absolute path of the entry, usable in every other verb. */
+  path: string;
+  /** "file" | "dir" */
+  type: string;
+  size: number;
+  mod_time_unix: number;
+}
+
+// listSandboxFiles lists one directory (default /workspace) without recursing.
+// 404 means no live sandbox is bound to the session yet.
+export async function listSandboxFiles(session_id: string, path = "/workspace") {
+  return get(
+    `/api/v1/sessions/${session_id}/sandbox/files?path=${encodeURIComponent(path)}`,
+  );
+}
+
+export async function downloadSandboxFile(
+  session_id: string,
+  path: string,
+): Promise<Blob> {
+  return getDown(
+    `/api/v1/sessions/${session_id}/sandbox/files/download?path=${encodeURIComponent(path)}`,
+  );
+}
+
+export async function uploadSandboxFile(
+  session_id: string,
+  path: string,
+  file: File,
+) {
+  const form = new FormData();
+  form.append("path", path);
+  form.append("file", file);
+  return postUpload(`/api/v1/sessions/${session_id}/sandbox/files`, form);
+}
+
+export async function makeSandboxDir(session_id: string, path: string) {
+  return post(`/api/v1/sessions/${session_id}/sandbox/files/mkdir`, { path });
+}
+
+export async function renameSandboxPath(
+  session_id: string,
+  from: string,
+  to: string,
+) {
+  return post(`/api/v1/sessions/${session_id}/sandbox/files/rename`, {
+    from,
+    to,
+  });
+}
+
+export async function deleteSandboxPath(session_id: string, path: string) {
+  return del(
+    `/api/v1/sessions/${session_id}/sandbox/files?path=${encodeURIComponent(path)}`,
   );
 }

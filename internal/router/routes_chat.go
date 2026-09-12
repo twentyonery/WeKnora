@@ -65,6 +65,15 @@ func RegisterSessionRoutes(
 		sessions.DELETE("/:id/attachments/:attachment_id", handler.DeleteTemporaryDocument)
 		sessions.POST("/:session_id/stop", handler.StopSession)
 		sessions.POST("/:session_id/sandbox/terminal-ticket", handler.IssueSandboxTerminalTicket)
+		// 可视化工作台 file manager: browse/upload/download/rename/delete
+		// the sandbox workspace bound to a session. GETs are lookup-only;
+		// mutations are owner-scoped inside the handlers.
+		sessions.GET("/:id/sandbox/files", handler.ListSandboxFiles)
+		sessions.GET("/:id/sandbox/files/download", handler.DownloadSandboxFile)
+		sessions.POST("/:session_id/sandbox/files", handler.UploadSandboxFile)
+		sessions.POST("/:session_id/sandbox/files/mkdir", handler.MakeSandboxDir)
+		sessions.POST("/:session_id/sandbox/files/rename", handler.RenameSandboxFile)
+		sessions.DELETE("/:id/sandbox/files", handler.DeleteSandboxFile)
 		sessions.GET("/:id/local-browser", handler.BrowserSkillConnection)
 		sessions.POST("/:session_id/local-browser", handler.BrowserSkillConnection)
 		// Mid-run message injection: append a user message to the turn that is

@@ -176,7 +176,11 @@ func TestResolveRefusesDockerConfigWithoutImage(t *testing.T) {
 	require.ErrorIs(t, err, ErrSandboxConfigIncomplete)
 }
 
-func TestResolveRefusesStoredLocalConfig(t *testing.T) {
+// The local backend is a first-class named backend now. A stored local config
+// without its required workspace_root is refused up front, exactly like a
+// Docker config without an image, while a complete one resolves to a live
+// SessionBoundManager.
+func TestResolveRefusesStoredLocalConfigWithoutRoot(t *testing.T) {
 	resolver, _ := newTestResolver(t, &stubTenantConfigLoader{
 		result: ResolvedTenantSandboxConfig{
 			Config: &types.TenantSandboxConfig{
@@ -190,7 +194,27 @@ func TestResolveRefusesStoredLocalConfig(t *testing.T) {
 	mgr, err := resolver.Resolve(context.Background(), 42, "cfg-local")
 
 	require.Nil(t, mgr)
-	require.ErrorIs(t, err, ErrUnsupportedSandboxType)
+	require.ErrorIs(t, err, ErrSandboxConfigIncomplete)
+}
+
+func TestResolveBuildsLocalManagerWithRoot(t *testing.T) {
+	resolver, _ := newTestResolver(t, &stubTenantConfigLoader{
+		result: ResolvedTenantSandboxConfig{
+			Config: &types.TenantSandboxConfig{
+				SandboxType: "local",
+				Local: &types.LocalSandboxConfig{
+					WorkspaceRoot: t.TempDir(),
+				},
+			},
+			Found: true,
+		},
+	})
+
+	mgr, err := resolver.Resolve(context.Background(), 42, "cfg-local")
+
+	require.NoError(t, err)
+	require.NotNil(t, mgr)
+	require.Equal(t, SandboxTypeLocal, mgr.GetType())
 }
 
 // No caching: the loader is consulted on every Resolve, which is what makes a
