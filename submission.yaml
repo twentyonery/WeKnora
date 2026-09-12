@@ -7,9 +7,9 @@ program: 腾讯犀牛鸟开源人才培养计划 2026（开源实战）
 project: WeKnora（腾讯开源知识库 RAG 项目）
 repository: https://github.com/Tencent/WeKnora
 submitter:
-  name: "<姓名>"
-  github_id: "<GitHub ID>"
-  email: "<联系邮箱>"
+  name: "王清扬"
+  github_id: "twentyonery"
+  email: "wangqingyang_x@163.com"
 
 topics:
   - topic: 课题二
