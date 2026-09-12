@@ -35,7 +35,7 @@ topics:
       - "以 Wiki 页面为知识节点，关联用户长期记忆（memory_items / memory_topic_stats / memory_doc_affinity）构建个人知识网络覆盖层"
       - "掌握度模型：仅用可观测行为信号（检索命中/对话引用/主题相关/页面访问），14 天半衰期时间衰减，归一化到 [0,1]"
       - "学习导航：点亮知识网络可视化 + 下一步学习引导闭环（internal/handler/learning.go、frontend/src/views/learning/）"
-      - "设计与评估：docs/DESIGN.md（问题定义/粒度选型/公式/接口），evaluation/replay_eval.py 回放评估"
+      - "设计与评估：topic4-learning-navigator/docs/DESIGN.md（问题定义/粒度选型/公式/接口），topic4-learning-navigator/evaluation/replay_eval.py 回放评估"
     verification:
       - "migrations/versioned/000094_learning_navigator.*.sql 为对应迁移"
-      - "python evaluation/replay_eval.py 可复现掌握度评估"
+      - "python topic4-learning-navigator/evaluation/replay_eval.py 可复现掌握度评估（已随仓库提交）"
