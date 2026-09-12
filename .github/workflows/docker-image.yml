@@ -15,6 +15,9 @@ env:
 
 jobs:
   build-ui:
+    # The workflow publishes Tencent's official Docker Hub image and needs
+    # repository secrets that only exist upstream; skip entirely on forks.
+    if: github.repository == 'Tencent/WeKnora'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -57,6 +60,7 @@ jobs:
 
   build-docreader:
     runs-on: ubuntu-latest
+    if: github.repository == 'Tencent/WeKnora'
     steps:
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -106,6 +110,7 @@ jobs:
 
   build-sandbox:
     runs-on: ubuntu-latest
+    if: github.repository == 'Tencent/WeKnora'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -174,6 +179,7 @@ jobs:
             platform: linux/arm64
             runs: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs }}
+    if: github.repository == 'Tencent/WeKnora'
     timeout-minutes: 60
     steps:
       - name: Checkout code
@@ -245,6 +251,7 @@ jobs:
 
   merge:
     runs-on: ubuntu-latest
+    if: github.repository == 'Tencent/WeKnora'
     needs:
       - build-app
     steps:
