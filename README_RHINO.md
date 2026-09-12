@@ -34,4 +34,4 @@ cd frontend && npm test && npx vue-tsc --build
 | 掌握度计算与学习引导服务 | `internal/application/service/learning/` |
 | REST API | `internal/handler/learning.go`、`internal/router/routes_learning.go` |
 | 前端可视化与导航 | `frontend/src/views/learning/`、`frontend/src/api/learning/` |
-| 设计说明与评估 | `topic4-learning-navigator/docs/DESIGN.md`、`topic4-learning-navigator/evaluation/replay_eval.py`（仓库外随附材料） |
+| 设计说明与评估 | `topic4-learning-navigator/docs/DESIGN.md`、`topic4-learning-navigator/evaluation/replay_eval.py` |
